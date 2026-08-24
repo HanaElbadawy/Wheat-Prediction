@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeepHybrid — genomic prediction for hybrid wheat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <div class="brand"><img src="/static/logo.png" alt="" onerror="this.remove()">DeepHybrid</div>
+    <nav>
+      <button data-go="overview" aria-current="page">Overview</button>
+      <button data-go="predict">Predictor</button>
+      <button data-go="explore">Cross Explorer</button>
+      <button data-go="scanner">Health Scanner</button>
+      <button data-go="method">Methodology</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ============ OVERVIEW ============ -->
+<section id="overview" class="page on">
+  <div class="hero-wrap">
+    <div class="hero-copy">
+      <h1>Know the cross<br>before you sow it.</h1>
+      <p>Score every possible cross in your parent pool, rank them, and spend a
+         season's field capacity on the ones worth testing.</p>
+      <div class="cta">
+        <button class="btn" data-go="predict">Start analysis &rarr;</button>
+        <button class="btn ghost" data-go="method">How it's validated</button>
+      </div>
+    </div>
+    <div class="hero-art" aria-hidden="true"></div>
+  </div>
+
+  <div class="grid g4 sec" id="ov-stats"></div>
+
+  <div class="sec">
+    <h2>Your parent pool, scored</h2>
+    <p class="lead">Most crosses land near the middle. The right-hand tail is the
+      short list — a handful of combinations worth a plot each.</p>
+    <div class="card">
+      <div class="ridge" id="ov-ridge"></div>
+      <div class="ridge-axis mono">
+        <span id="ov-lo"></span>
+        <span id="ov-med"></span>
+        <span id="ov-hi"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>Worth trialling next</h2>
+    <p class="lead">Top-ranked combinations from parents already in your programme
+      that have never been grown together.</p>
+    <div class="card"><table id="ov-top"></table></div>
+    <div style="margin-top:14px">
+      <button class="btn ghost sm" data-go="explore">See all rankings &rarr;</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>Built for decisions, not demos</h2>
+    <p class="lead">Three commitments behind every number on this page.</p>
+    <div class="grid g3">
+      <div class="card">
+        <div class="mono">01 — relatedness</div>
+        <h3>Additive and dominance</h3>
+        <p>Both genetic components are modelled, not just the additive one.
+           Heterosis is where hybrid advantage comes from, and dropping it
+           costs real accuracy.</p>
+      </div>
+      <div class="card">
+        <div class="mono">02 — ranking</div>
+        <h3>Ranked against the field</h3>
+        <p>Hybrid yields sit in a narrow band, so a lone figure tells you
+           little. Every cross is placed against every alternative you could
+           make instead.</p>
+      </div>
+      <div class="card">
+        <div class="mono">03 — honesty</div>
+        <h3>Limits stated up front</h3>
+        <p>Accuracy depends on how related a cross is to what the model has
+           seen. That figure is shown with every prediction, and the ranking is
+           withheld when it would not hold up.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="note">
+      <b>What this tool does not do.</b> It predicts yield; it does not judge
+      whether a cross can be made. Feasibility depends on anther extrusion,
+      flowering synchrony and plant height difference — traits fixed when the
+      trial was designed. The training data contains only successful crosses,
+      so there are no failures to learn from.
+    </div>
+  </div>
+</section>
+
+<!-- ============ PREDICTOR ============ -->
+<section id="predict" class="page">
+  <span class="eyebrow">single-cross prediction</span>
+  <h1 style="font-size:36px;margin:16px 0 10px">Hybrid Predictor</h1>
+  <p class="lead" style="color:var(--muted);max-width:640px;margin-bottom:26px">
+    Pick the two parents. You get the expected yield of their F1, where it ranks
+    against every alternative cross, and what the difference is worth.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <div class="mono" style="margin-bottom:16px">Lineage</div>
+      <label class="fld"><span class="mono">Female parent (seed)</span>
+        <select id="fem"></select></label>
+      <label class="fld"><span class="mono">Male parent (pollen)</span>
+        <select id="mal"></select></label>
+      <button class="btn" id="run">Predict cross</button>
+      <p id="err" style="color:#A33;font-size:13px;margin-top:10px"></p>
+    </div>
+
+    <div id="res" class="result">
+      <div class="card">
+        <div class="grid" style="grid-template-columns:1fr 1fr;gap:26px">
+          <div>
+            <div class="mono">Predicted yield</div>
+            <div class="big num" id="r-yield">—<small>Mg/ha</small></div>
+            <div class="delta" id="r-delta"></div>
+          </div>
+          <div>
+            <div class="mono">Ranking</div>
+            <div class="big num" id="r-pct">—</div>
+            <div class="delta" id="r-rank"></div>
+          </div>
+        </div>
+        <div id="r-note" style="margin-top:22px"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="mono">Position among all possible crosses</div>
+        <div class="ridge" id="ridge"></div>
+        <div class="ridge-axis mono">
+          <span id="ax-lo"></span><span id="ax-hi"></span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px">
+        <div class="mono">What the difference is worth</div>
+        <div class="row" style="margin:14px 0 18px">
+          <label class="fld" style="margin:0">
+            <span class="mono">Grain price (€/tonne)</span>
+            <input type="number" id="ec-price" value="220" min="1" step="5"></label>
+          <label class="fld" style="margin:0">
+            <span class="mono">Area (hectares)</span>
+            <input type="number" id="ec-ha" value="100" min="1" step="10"></label>
+        </div>
+        <div id="ec-out"></div>
+        <p style="font-size:12.5px;color:var(--muted);margin-top:14px">
+          Your price, your area — not a market feed. Grain prices move
+          independently of genetics, and this makes the arithmetic visible.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ EXPLORER ============ -->
+<section id="explore" class="page">
+  <span class="eyebrow">ranked shortlist</span>
+  <h1 style="font-size:36px;margin:16px 0 10px">Cross Explorer</h1>
+  <p class="lead" style="color:var(--muted);max-width:640px;margin-bottom:24px">
+    Plan a crossing block. Filter to one seed parent, set how many rows you can
+    fit, and export the list.</p>
+
+  <div class="card">
+    <div class="row">
+      <label class="fld" style="margin:0"><span class="mono">Seed parent</span>
+        <select id="x-fem"><option value="">All females</option></select></label>
+      <label class="fld" style="margin:0"><span class="mono">How many</span>
+        <input type="number" id="x-n" value="25" min="5" max="200" step="5"></label>
+      <label class="chk" style="flex:0 0 auto">
+        <input type="checkbox" id="x-untested" checked> Untested only</label>
+      <button class="btn sm" id="x-run" style="flex:0 0 auto">Rank crosses</button>
+    </div>
+  </div>
+
+  <div class="card sec" id="x-wrap" style="display:none">
+    <div class="row" style="margin-bottom:14px">
+      <div class="mono" id="x-count"></div>
+      <button class="btn ghost sm" id="x-csv" style="flex:0 0 auto">Download CSV</button>
+    </div>
+    <div style="overflow-x:auto"><table id="x-table"></table></div>
+  </div>
+</section>
+
+<!-- ============ SCANNER ============ -->
+<section id="scanner" class="page">
+  <span class="eyebrow" id="sc-eyebrow">integration pending</span>
+  <h1 style="font-size:36px;margin:16px 0 10px">Plant Health Scanner</h1>
+  <p class="lead" style="color:var(--muted);max-width:640px;margin-bottom:24px">
+    Upload a leaf image to screen for disease. The classifier is being trained
+    separately; this page and its API endpoint are already in place.</p>
+
+  <div id="sc-banner"></div>
+
+  <div class="grid g2 sec" style="margin-top:20px">
+    <div class="card">
+      <div class="mono" style="margin-bottom:14px">Sample</div>
+      <div id="drop" style="border:1.5px dashed var(--line);border-radius:11px;
+           padding:38px 20px;text-align:center;cursor:pointer;transition:.15s">
+        <div style="font-size:30px">🌿</div>
+        <div style="font-weight:600;color:var(--ink);margin-top:10px">
+          Drop a leaf image</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px">
+          JPG, PNG or TIFF · up to 20 MB</div>
+      </div>
+      <input type="file" id="sc-file" accept="image/*" hidden>
+      <div id="sc-preview" style="margin-top:14px"></div>
+      <button class="btn" id="sc-run" style="margin-top:14px" disabled>
+        Analyse sample</button>
+    </div>
+
+    <div class="card">
+      <div class="mono" style="margin-bottom:14px">Diagnostic report</div>
+      <div id="sc-result">
+        <p style="color:var(--muted);font-size:14px">
+          Results appear here once a sample is analysed.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="sec">
+    <h2>For whoever connects the model</h2>
+    <div class="card">
+      <p style="color:var(--muted);font-size:14px;margin-bottom:14px">
+        Three steps in <code>main.py</code>. Nothing on this page changes.</p>
+      <table>
+        <tbody>
+          <tr><td class="mono">01</td><td>Place the trained weights beside
+            <code>main.py</code></td></tr>
+          <tr><td class="mono">02</td><td>Set <code>SCANNER_MODEL_PATH</code></td></tr>
+          <tr><td class="mono">03</td><td>Fill in <code>_run_scanner()</code> —
+            decode, resize, predict, map to labels</td></tr>
+        </tbody>
+      </table>
+      <p style="color:var(--muted);font-size:13px;margin-top:14px">
+        The endpoint must return <code>label</code>, <code>confidence</code>
+        and <code>alternatives</code>. It returns 503 until then, so the page
+        never shows an invented diagnosis.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ METHODOLOGY ============ -->
+<section id="method" class="page">
+  <span class="eyebrow">measured performance</span>
+  <h1 style="font-size:36px;margin:16px 0 10px">Methodology</h1>
+
+  <div class="sec">
+    <h2>How well does it predict?</h2>
+    <p class="lead">Predictive ability is the Pearson correlation between
+      predicted and observed yield — the standard metric in genomic prediction.
+      It depends far more on how related a cross is to the training set than on
+      the model itself.</p>
+    <div class="card"><table id="m-bands"></table></div>
+  </div>
+
+  <div class="sec">
+    <h2>Reproduction of the published protocol</h2>
+    <p class="lead">The implementation was rebuilt in Python and checked against
+      Zhao et al. (2021) and its supplementary tables.</p>
+    <div class="card"><table id="m-repro"></table></div>
+  </div>
+
+  <div class="sec">
+    <h2>Why ranking rather than the raw number</h2>
+    <p class="lead">Observed hybrids average 10.08 Mg/ha with a standard
+      deviation of 0.35, and BLUP shrinks predictions toward that mean. Absolute
+      values cluster tightly while the ordering stays informative — and ordering
+      is what a Pearson correlation measures, and what a breeder with limited
+      plots actually needs.</p>
+  </div>
+
+  <div class="sec">
+    <h2>Not modelled</h2>
+    <div class="grid g3" id="m-not"></div>
+  </div>
+
+  <div class="sec">
+    <div class="note">
+      <b>Scope.</b> Calibrated on Central European elite winter wheat
+      (Experimental Series II: 1,725 hybrids from 178 female × 39 male parents).
+      Performance on germplasm outside this pool is uncharacterised — a cross
+      between two parents the model has never seen falls to r ≈ 0.26.
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="mono">
+  DeepHybrid · genomic prediction for hybrid wheat · <a href="/docs">API</a> · <a href="#" data-go="method">validation</a>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
