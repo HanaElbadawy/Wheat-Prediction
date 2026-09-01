@@ -200,58 +200,68 @@
 
 <!-- ============ SCANNER ============ -->
 <section id="scanner" class="page">
-  <span class="eyebrow" id="sc-eyebrow">integration pending</span>
-  <h1 style="font-size:36px;margin:16px 0 10px">Plant Health Scanner</h1>
+  <span class="eyebrow" id="sc-eyebrow">checking…</span>
+  <h1 style="font-size:36px;margin:16px 0 10px">Crop-Vigor Scanner</h1>
+  <p class="lead" style="color:var(--muted);max-width:640px;margin-bottom:8px">
+    A per-pixel vigor map (Low / Medium / High) from 9-band multispectral UAV
+    imagery — SegFormer (MiT-B0) fine-tuned on drone captures.</p>
   <p class="lead" style="color:var(--muted);max-width:640px;margin-bottom:24px">
-    Upload a leaf image to screen for disease. The classifier is being trained
-    separately; this page and its API endpoint are already in place.</p>
+    <b>This does not work on a phone photo.</b> The model was trained on
+    calibrated Blue/Green/Red/RedEdge/NIR bands plus four pre-computed
+    vegetation indices (NDVI, NDRE, CI_RedEdge, GNDVI) — information an
+    ordinary camera simply doesn't capture. Try one of the sample patches
+    below, or upload your own 9-band GeoTIFF.</p>
 
   <div id="sc-banner"></div>
 
   <div class="grid g2 sec" style="margin-top:20px">
     <div class="card">
-      <div class="mono" style="margin-bottom:14px">Sample</div>
+      <div class="mono" style="margin-bottom:14px">Try a sample patch</div>
+      <div id="sc-samples" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px"></div>
+
+      <div class="mono" style="margin-bottom:14px">Or upload your own</div>
       <div id="drop" style="border:1.5px dashed var(--line);border-radius:11px;
            padding:38px 20px;text-align:center;cursor:pointer;transition:.15s">
-        <div style="font-size:30px">🌿</div>
+        <div style="font-size:30px">🛰️</div>
         <div style="font-weight:600;color:var(--ink);margin-top:10px">
-          Drop a leaf image</div>
+          Drop a 9-band GeoTIFF patch</div>
         <div style="font-size:13px;color:var(--muted);margin-top:4px">
-          JPG, PNG or TIFF · up to 20 MB</div>
+          .tif / .tiff · 224×224 · up to 25 MB</div>
       </div>
-      <input type="file" id="sc-file" accept="image/*" hidden>
+      <input type="file" id="sc-file" accept=".tif,.tiff" hidden>
       <div id="sc-preview" style="margin-top:14px"></div>
       <button class="btn" id="sc-run" style="margin-top:14px" disabled>
-        Analyse sample</button>
+        Analyse patch</button>
     </div>
 
     <div class="card">
-      <div class="mono" style="margin-bottom:14px">Diagnostic report</div>
+      <div class="mono" style="margin-bottom:14px">Vigor map</div>
       <div id="sc-result">
         <p style="color:var(--muted);font-size:14px">
-          Results appear here once a sample is analysed.</p>
+          Results appear here once a patch is analysed.</p>
       </div>
     </div>
   </div>
 
   <div class="sec">
-    <h2>For whoever connects the model</h2>
+    <h2>What this model is and isn't</h2>
     <div class="card">
-      <p style="color:var(--muted);font-size:14px;margin-bottom:14px">
-        Three steps in <code>main.py</code>. Nothing on this page changes.</p>
       <table>
         <tbody>
-          <tr><td class="mono">01</td><td>Place the trained weights beside
-            <code>main.py</code></td></tr>
-          <tr><td class="mono">02</td><td>Set <code>SCANNER_MODEL_PATH</code></td></tr>
-          <tr><td class="mono">03</td><td>Fill in <code>_run_scanner()</code> —
-            decode, resize, predict, map to labels</td></tr>
+          <tr><td class="mono">Input</td><td>9-band multispectral GeoTIFF,
+            224×224 patch (Blue, Green, Red, RedEdge, NIR, NDVI, NDRE,
+            CI_RedEdge, GNDVI)</td></tr>
+          <tr><td class="mono">Output</td><td>Per-pixel crop-vigor class
+            (Low / Medium / High), derived from Canopy Chlorophyll Content —
+            not a disease diagnosis</td></tr>
+          <tr><td class="mono">Reported accuracy</td><td>mIoU 0.480, pixel
+            accuracy 0.620 on the held-out test set; strongest on the Medium
+            class (IoU ≈ 0.34)</td></tr>
+          <tr><td class="mono">Not supported</td><td>Ordinary RGB photos —
+            no RedEdge/NIR channel, no calibrated reflectance, no
+            pre-computed indices</td></tr>
         </tbody>
       </table>
-      <p style="color:var(--muted);font-size:13px;margin-top:14px">
-        The endpoint must return <code>label</code>, <code>confidence</code>
-        and <code>alternatives</code>. It returns 503 until then, so the page
-        never shows an invented diagnosis.</p>
     </div>
   </div>
 </section>

@@ -255,16 +255,33 @@ $("#x-csv").onclick = () => {
 /* ---------- scanner ---------- */
 
 let SC_FILE = null;
+let SC_SAMPLES = [];
 
 async function loadScannerStatus() {
   const s = await api("/api/scanner/status");
-  $("#sc-eyebrow").textContent =
-    s.available ? "model connected" : "integration pending";
+  $("#sc-eyebrow").textContent = s.available ? "model connected" : "model unavailable";
   $("#sc-banner").innerHTML = s.available
-    ? `<div class="note good">${s.message}</div>`
-    : `<div class="note"><b>Model in development.</b> ${s.message}</div>`;
+    ? `<div class="note good">${s.message} Reported test accuracy: mIoU ${s.reported_test_metrics.mIoU},
+       pixel accuracy ${s.reported_test_metrics.pixel_accuracy}.</div>`
+    : `<div class="note"><b>Model unavailable.</b> ${s.message}</div>`;
   $("#sc-run").disabled = true;
-  $("#sc-run").dataset.available = s.available ? "1" : "";
+  SC_SAMPLES = s.sample_patches_available || [];
+  renderSampleButtons();
+}
+
+function renderSampleButtons() {
+  const box = $("#sc-samples");
+  if (!box) return;
+  if (!SC_SAMPLES.length) {
+    box.innerHTML = '<div class="note">No demo patches bundled.</div>';
+    return;
+  }
+  box.innerHTML = SC_SAMPLES.map((name, i) =>
+    `<button class="btn ghost sm sc-sample-btn" data-name="${name}">Sample ${i + 1}</button>`
+  ).join(" ");
+  box.querySelectorAll(".sc-sample-btn").forEach(btn => {
+    btn.onclick = () => runScan({ sampleName: btn.dataset.name });
+  });
 }
 
 const drop = $("#drop"), fileIn = $("#sc-file");
@@ -288,44 +305,71 @@ if (drop) {
 }
 
 function takeFile(f) {
-  if (!f.type.startsWith("image/")) {
+  const name = f.name.toLowerCase();
+  if (!(name.endsWith(".tif") || name.endsWith(".tiff"))) {
     $("#sc-preview").innerHTML =
-      '<div class="note">That is not an image. Use JPG, PNG or TIFF.</div>';
+      '<div class="note"><b>That won\'t work.</b> This model reads 9-band multispectral ' +
+      'GeoTIFF patches from UAV capture — not JPG/PNG photos. Try one of the sample ' +
+      'patches above, or upload a .tif with the required bands.</div>';
+    SC_FILE = null;
+    $("#sc-run").disabled = true;
     return;
   }
   SC_FILE = f;
-  const url = URL.createObjectURL(f);
   $("#sc-preview").innerHTML =
-    `<img src="${url}" style="width:100%;border-radius:10px;
-     border:1px solid var(--line)">
-     <div class="mono" style="margin-top:8px">${f.name} ·
-     ${(f.size / 1e6).toFixed(1)} MB</div>`;
+    `<div class="mono">${f.name} · ${(f.size / 1e6).toFixed(1)} MB</div>
+     <div style="font-size:13px;color:var(--muted);margin-top:4px">
+     GeoTIFF preview isn't rendered in-browser — the result map will appear after analysis.</div>`;
   $("#sc-run").disabled = false;
 }
 
-const scRun = $("#sc-run");
-if (scRun) {
-  scRun.onclick = async () => {
-    if (!SC_FILE) return;
-    scRun.disabled = true;
-    scRun.innerHTML = '<span class="spinner"></span> Analysing…';
-    try {
+function renderScanResult(r) {
+  const pct = r.class_pixel_pct;
+  const colors = { Low: "#d62728", Medium: "#ff7f0e", High: "#2ca02c" };
+  const bars = Object.entries(pct).map(([label, v]) => `
+    <div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;font-size:13px">
+        <span>${label}</span><span class="mono">${v}%</span>
+      </div>
+      <div style="background:var(--line);border-radius:6px;height:8px;overflow:hidden">
+        <div style="width:${v}%;height:100%;background:${colors[label]}"></div>
+      </div>
+    </div>`).join("");
+
+  $("#sc-result").innerHTML = `
+    <img src="data:image/png;base64,${r.map_png_base64}" alt="crop-vigor map"
+         style="width:100%;border-radius:10px;border:1px solid var(--line);margin-bottom:14px;image-rendering:pixelated">
+    <div class="mono" style="margin-bottom:6px">Dominant class</div>
+    <div class="big" style="font-size:26px;margin-bottom:14px">${r.dominant_class}</div>
+    ${bars}
+    <div class="note" style="margin-top:14px">${r.note}</div>`;
+}
+
+async function runScan({ sampleName } = {}) {
+  const scRun = $("#sc-run");
+  const busyEl = sampleName ? null : scRun;
+  if (busyEl) { busyEl.disabled = true; busyEl.innerHTML = '<span class="spinner"></span> Analysing…'; }
+  $("#sc-result").innerHTML = '<div class="note">Analysing…</div>';
+  try {
+    let r;
+    if (sampleName) {
+      r = await api(`/api/scanner/predict-sample/${encodeURIComponent(sampleName)}`, { method: "POST" });
+    } else {
+      if (!SC_FILE) return;
       const fd = new FormData();
       fd.append("file", SC_FILE);
-      const r = await api("/api/scanner/predict", { method: "POST", body: fd });
-      $("#sc-result").innerHTML = `
-        <div class="mono">Detected</div>
-        <div class="big" style="font-size:26px">${r.label}</div>
-        <div class="delta">${(100 * r.confidence).toFixed(1)}% confidence</div>`;
-    } catch (e) {
-      $("#sc-result").innerHTML =
-        `<div class="note"><b>No prediction available.</b> ${e.message}</div>`;
-    } finally {
-      scRun.disabled = false;
-      scRun.textContent = "Analyse sample";
+      r = await api("/api/scanner/predict", { method: "POST", body: fd });
     }
-  };
+    renderScanResult(r);
+  } catch (e) {
+    $("#sc-result").innerHTML = `<div class="note"><b>No prediction available.</b> ${e.message}</div>`;
+  } finally {
+    if (busyEl) { busyEl.disabled = false; busyEl.textContent = "Analyse patch"; }
+  }
 }
+
+const scRun = $("#sc-run");
+if (scRun) scRun.onclick = () => runScan();
 
 /* ---------- methodology ---------- */
 

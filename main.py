@@ -330,71 +330,118 @@ def economics(req: EconomicsRequest):
 
 
 # ----------------------------------------------------------------------
-# Plant health scanner — integration point, model not yet available
+# Plant health / crop-vigor scanner — SegFormer, 9-band multispectral UAV
 # ----------------------------------------------------------------------
 #
-# A separate disease-classification model is in development by another team
-# member. The interface and the contract are ready so that deployment is a
-# single-file change when the model lands.
-#
-# TO CONNECT THE MODEL:
-#   1. Put the trained weights next to this file, e.g. leaf_model.keras
-#   2. Set SCANNER_MODEL_PATH below
-#   3. Fill in _run_scanner() — decode, resize, predict, map to labels
-# Nothing else changes: the endpoint, the schema and the page already work.
+# IMPORTANT: this is not a leaf-photo disease classifier. The delivered
+# model is a per-pixel segmentation model trained on 9-band multispectral
+# drone imagery (Blue/Green/Red/RedEdge/NIR + NDVI/NDRE/CI_RedEdge/GNDVI),
+# predicting crop vigor (Low/Medium/High) per pixel from a 224x224 patch.
+# It cannot classify an ordinary phone photo — see plant_health_model.py
+# for why, and for the transformers-version pin this checkpoint requires.
 
-SCANNER_MODEL_PATH = None      # e.g. BASE / "leaf_model.keras"
-_scanner = None
+import base64
+import io
 
-
-def _load_scanner():
-    global _scanner
-    if SCANNER_MODEL_PATH is None:
-        return None
-    if _scanner is None:
-        import keras                       # imported lazily, only when used
-        _scanner = keras.models.load_model(SCANNER_MODEL_PATH)
-    return _scanner
-
-
-def _run_scanner(image_bytes: bytes) -> dict:
-    """Return {"label": str, "confidence": float, "alternatives": [...]}."""
-    raise NotImplementedError("Wire the classifier here")
+try:
+    import plant_health_model as phm
+    _SCANNER_IMPORT_ERROR = None
+except Exception as exc:  # noqa: BLE001 — torch/transformers not installed on this deploy
+    phm = None
+    _SCANNER_IMPORT_ERROR = str(exc)
 
 
 @app.get("/api/scanner/status", tags=["scanner"])
 def scanner_status():
-    """Whether the disease model is connected."""
+    if phm is None:
+        return {
+            "available": False,
+            "message": "Scanner dependencies (torch/transformers) are not installed "
+                       "on this deployment. The rest of the app is unaffected.",
+        }
+    try:
+        phm.load_model()
+        available = True
+        message = "Model connected and ready."
+    except Exception as exc:  # noqa: BLE001 — surface the real reason
+        available = False
+        message = f"Model failed to load: {exc}"
     return {
-        "available": SCANNER_MODEL_PATH is not None,
-        "message": (
-            "Model connected and ready."
-            if SCANNER_MODEL_PATH is not None else
-            "Disease classification model is in development. The interface "
-            "and API contract are in place; predictions become available once "
-            "the model is connected."
-        ),
+        "available": available,
+        "message": message,
+        "input_requirements": {
+            "format": "9-band multispectral GeoTIFF (UAV capture)",
+            "bands": phm.BAND_NAMES,
+            "patch_size": phm.PATCH_SIZE,
+            "not_supported": "Ordinary RGB photos (phone/webcam) cannot be scored — "
+                              "they don't contain the RedEdge/NIR bands or the "
+                              "pre-computed vegetation indices the model was trained on.",
+        },
+        "classes": phm.CLASS_NAMES,
+        "reported_test_metrics": phm.REPORTED_METRICS,
+        "sample_patches_available": phm.list_samples(),
+    }
+
+
+@app.get("/api/scanner/samples", tags=["scanner"])
+def scanner_samples():
+    """Bundled demo patches, since most visitors won't have their own UAV captures."""
+    if phm is None:
+        raise HTTPException(503, "Scanner is not available on this deployment.")
+    return {"samples": phm.list_samples()}
+
+
+def _run_scanner_bytes(data: bytes) -> dict:
+    feature = phm.read_multiband_tif(data)
+    result = phm.predict(feature)
+    rgb = phm.colourise(result["pred_map"])
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.fromarray(rgb).save(buf, format="PNG")
+    png_b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+
+    return {
+        "dominant_class": result["dominant_class"],
+        "class_pixel_pct": result["class_pixel_pct"],
+        "mean_confidence": result["mean_confidence"],
+        "map_png_base64": png_b64,
+        "note": "Per-pixel crop-vigor map (Low/Medium/High), not a disease diagnosis. "
+                f"Reported test-set accuracy: mIoU={phm.REPORTED_METRICS['mIoU']}, "
+                f"pixel accuracy={phm.REPORTED_METRICS['pixel_accuracy']}.",
     }
 
 
 @app.post("/api/scanner/predict", tags=["scanner"])
 async def scanner_predict(file: UploadFile = File(...)):
-    """Classify a leaf image. Returns 503 until the model is connected."""
-    if SCANNER_MODEL_PATH is None:
-        raise HTTPException(
-            503,
-            "Disease classification model is not yet connected. This endpoint "
-            "is ready and will return predictions once it is.")
-
-    if not (file.content_type or "").startswith("image/"):
-        raise HTTPException(415, "Upload an image file (JPG, PNG or TIFF).")
-
+    """Score an uploaded 9-band multispectral GeoTIFF patch."""
+    if phm is None:
+        raise HTTPException(503, "Scanner is not available on this deployment.")
     data = await file.read()
-    if len(data) > 20_000_000:
-        raise HTTPException(413, "Image exceeds the 20 MB limit.")
+    if len(data) > 25_000_000:
+        raise HTTPException(413, "File exceeds the 25 MB limit.")
+    try:
+        return _run_scanner_bytes(data)
+    except ValueError as exc:
+        raise HTTPException(415, str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(503, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
 
-    _load_scanner()
-    return _run_scanner(data)
+
+@app.post("/api/scanner/predict-sample/{name}", tags=["scanner"])
+async def scanner_predict_sample(name: str):
+    """Score one of the bundled demo patches by filename."""
+    if phm is None:
+        raise HTTPException(503, "Scanner is not available on this deployment.")
+    path = phm.SAMPLE_DIR / name
+    if not path.exists() or path not in {phm.SAMPLE_DIR / n for n in phm.list_samples()}:
+        raise HTTPException(404, f"No sample named {name!r}.")
+    try:
+        return _run_scanner_bytes(path.read_bytes())
+    except RuntimeError as exc:
+        raise HTTPException(500, str(exc))
 
 
 @app.get("/api/health", tags=["about"])
