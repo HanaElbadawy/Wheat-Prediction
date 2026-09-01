@@ -325,11 +325,13 @@ function takeFile(f) {
 
 function renderScanResult(r) {
   const pct = r.class_pixel_pct;
+  const area = r.class_area_m2 || {};
   const colors = { Low: "#d62728", Medium: "#ff7f0e", High: "#2ca02c" };
   const bars = Object.entries(pct).map(([label, v]) => `
     <div style="margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;font-size:13px">
-        <span>${label}</span><span class="mono">${v}%</span>
+        <span>${label}</span>
+        <span class="mono">${v}%${area[label] !== undefined ? `  ·  ${area[label]} m²` : ""}</span>
       </div>
       <div style="background:var(--line);border-radius:6px;height:8px;overflow:hidden">
         <div style="width:${v}%;height:100%;background:${colors[label]}"></div>
@@ -340,7 +342,8 @@ function renderScanResult(r) {
     <img src="data:image/png;base64,${r.map_png_base64}" alt="crop-vigor map"
          style="width:100%;border-radius:10px;border:1px solid var(--line);margin-bottom:14px;image-rendering:pixelated">
     <div class="mono" style="margin-bottom:6px">Dominant class</div>
-    <div class="big" style="font-size:26px;margin-bottom:14px">${r.dominant_class}</div>
+    <div class="big" style="font-size:26px;margin-bottom:4px">${r.dominant_class}</div>
+    ${r.total_area_m2 !== undefined ? `<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Patch area: ${r.total_area_m2} m² total (${r.gsd_m * 100} cm/pixel)</div>` : ""}
     ${bars}
     <div class="note" style="margin-top:14px">${r.note}</div>`;
 }

@@ -52,6 +52,13 @@ PATCH_SIZE = 224
 CLIP_RANGE = (-10.0, 10.0)
 NODATA_TARGET_VALUE = 15
 
+# Ground Sampling Distance — real-world size of one pixel edge, in metres.
+# 7 cm/pixel is the resolution these UAV captures were flown at. If a batch
+# of imagery is captured at a different altitude/sensor setup, update this
+# (or pass gsd_m explicitly into predict()) — area is wrong otherwise.
+GSD_METERS = 0.07
+PIXEL_AREA_M2 = GSD_METERS ** 2  # 0.0049 m² per pixel at 7 cm GSD
+
 CLASS_NAMES = {0: "Low", 1: "Medium", 2: "High"}
 CLASS_COLORS = {0: (214, 39, 40), 1: (255, 127, 14), 2: (44, 160, 44)}  # red / orange / green
 BAND_NAMES = ["Blue", "Green", "Red", "RedEdge", "NIR", "NDVI", "NDRE", "CI_RedEdge", "GNDVI"]
@@ -124,10 +131,12 @@ def read_multiband_tif(data: bytes) -> np.ndarray:
     return feature
 
 
-def predict(feature: np.ndarray) -> dict:
+def predict(feature: np.ndarray, gsd_m: float = GSD_METERS) -> dict:
     """
     feature: (9, H, W) float32, already clipped/cleaned.
-    Returns per-pixel class map plus a summary.
+    gsd_m: ground sampling distance in metres/pixel (default 7 cm capture).
+    Returns per-pixel class map plus a summary, including real-world area
+    per class.
     """
     model = load_model()
     h, w = feature.shape[1], feature.shape[2]
@@ -141,15 +150,22 @@ def predict(feature: np.ndarray) -> dict:
         probs = torch.softmax(upsampled, dim=1).squeeze(0).numpy()
         pred = np.argmax(probs, axis=0)
 
+    pixel_area_m2 = gsd_m ** 2
     total = pred.size
+    total_area_m2 = total * pixel_area_m2
+
     class_pixels = {c: int((pred == c).sum()) for c in range(NUM_CLASSES)}
     class_pct = {CLASS_NAMES[c]: round(100 * class_pixels[c] / total, 1) for c in range(NUM_CLASSES)}
+    class_area_m2 = {CLASS_NAMES[c]: round(class_pixels[c] * pixel_area_m2, 2) for c in range(NUM_CLASSES)}
     dominant = max(class_pixels, key=class_pixels.get)
     mean_confidence = float(np.mean(np.max(probs, axis=0)))
 
     return {
         "pred_map": pred,               # (H, W) int array, for the caller to colourise
         "class_pixel_pct": class_pct,
+        "class_area_m2": class_area_m2,
+        "total_area_m2": round(total_area_m2, 2),
+        "gsd_m": gsd_m,
         "dominant_class": CLASS_NAMES[dominant],
         "mean_confidence": round(mean_confidence, 3),
     }
