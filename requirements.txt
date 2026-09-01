@@ -3,3 +3,9 @@ python-multipart>=0.0.9
 uvicorn[standard]>=0.29
 numpy>=1.24
 pydantic>=2.0
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+transformers==4.44.2
+rasterio
+Pillow
